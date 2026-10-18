@@ -9,20 +9,34 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-DATA = Path(__file__).parent / "data"
+HERE = Path(__file__).parent
+# Files may sit in ./data (as shipped) or next to dashboard.py (if the data folder was flattened on upload)
+SEARCH = [HERE / "data", HERE]
 MINE_LIGHT, MINE, NOON_LIGHT, NOON = "#86b6ef", "#2a78d6", "#f5b49a", "#eb6834"
 GREY = "#9a9994"
 
 st.set_page_config(page_title="Noon Fraud Lab — Results", page_icon="📊", layout="wide")
 
+# Fallback copy of data/metrics.json, so the metric and confusion-matrix tabs work even if the file is missing.
+EMBEDDED_METRICS = json.loads(r"""{"seed_test": {"(A) Full natural (320 real fraud)": {"recall": 0.9375, "precision": 0.974025974025974, "f1": 0.9554140127388535, "accuracy": 0.993, "cm": [[918, 2], [5, 75]], "train_fraud": 320, "train_rows": 4000}, "(B) BEFORE: scarce 12 real fraud only": {"recall": 0.375, "precision": 1.0, "f1": 0.5454545454545454, "accuracy": 0.95, "cm": [[920, 0], [50, 30]], "train_fraud": 12, "train_rows": 3692}, "(C) AFTER: 12 real + 300 GAN-synthetic fraud": {"recall": 0.2125, "precision": 1.0, "f1": 0.35051546391752575, "accuracy": 0.937, "cm": [[920, 0], [63, 17]], "train_fraud": 312, "train_rows": 3992}}, "referee": {"Mine — before (seed only)": {"recall": 0.46153846153846156, "precision": 0.14705882352941177, "f1": 0.22304832713754646, "accuracy": 0.98955, "cm": [[19761, 174], [35, 30]]}, "Mine — after (seed + my GAN)": {"recall": 0.6, "precision": 0.021487603305785124, "f1": 0.04148936170212766, "accuracy": 0.9099, "cm": [[18159, 1776], [26, 39]]}, "Noon (real + Noon GAN)": {"recall": 0.8153846153846154, "precision": 0.4274193548387097, "f1": 0.5608465608465608, "accuracy": 0.99585, "cm": [[19864, 71], [12, 53]]}, "Noon real-only (reported)": {"recall": 0.14, "precision": 0.9, "f1": 0.24, "accuracy": null, "cm": null, "false_positives": 1}}, "lie_detector": {"accuracy": 0.9888333333333333, "importances": {"delivery_distance_km": 0.2122, "num_orders_last_7d": 0.154, "account_age_days": 0.1321, "order_amount": 0.1105, "hour_of_day": 0.1028, "prev_refunds": 0.0806, "payment_method_card": 0.0618, "payment_method_wallet": 0.0539, "payment_method_applepay": 0.0231, "payment_method_cod": 0.0212, "location_mismatch": 0.0184, "device_change": 0.0173, "discount_applied": 0.0121}}, "proportions": {"My synthetic file": [3000, 1.0], "Noon synthetic file": [3000, 1.0], "My seed (train)": [4000, 0.08], "My training set after GAN": [7000, 0.4742857142857143], "Real referee data": [20000, 0.00325]}, "assumption_check": {"My seed legit": {"order_amount": 61.693, "account_age_days": 613.369, "hour_of_day": 14.117, "num_orders_last_7d": 1.515, "delivery_distance_km": 3.988, "discount_applied": 0.244, "prev_refunds": 0.296, "device_change": 0.032, "location_mismatch": 0.018}, "Real legit": {"order_amount": 99.669, "account_age_days": 263.711, "hour_of_day": 11.583, "num_orders_last_7d": 3.014, "delivery_distance_km": 5.034, "discount_applied": 0.346, "prev_refunds": 0.305, "device_change": 0.08, "location_mismatch": 0.049}, "My seed fraud": {"order_amount": 168.262, "account_age_days": 279.39, "hour_of_day": 11.53, "num_orders_last_7d": 1.898, "delivery_distance_km": 12.503, "discount_applied": 0.388, "prev_refunds": 3.138, "device_change": 0.575, "location_mismatch": 0.372}, "My GAN fraud": {"order_amount": 272.6, "account_age_days": 289.596, "hour_of_day": 10.539, "num_orders_last_7d": 1.487, "delivery_distance_km": 8.786, "discount_applied": 0.246, "prev_refunds": 1.942, "device_change": 0.682, "location_mismatch": 0.479}, "Noon GAN fraud": {"order_amount": 135.015, "account_age_days": 190.354, "hour_of_day": 7.061, "num_orders_last_7d": 3.982, "delivery_distance_km": 5.051, "discount_applied": 0.428, "prev_refunds": 0.724, "device_change": 0.648, "location_mismatch": 0.629}, "Real fraud": {"order_amount": 138.483, "account_age_days": 155.446, "hour_of_day": 8.908, "num_orders_last_7d": 3.723, "delivery_distance_km": 5.268, "discount_applied": 0.4, "prev_refunds": 0.692, "device_change": 0.708, "location_mismatch": 0.6}}}""")
+
+
+def find(name):
+    for d in SEARCH:
+        if (d / name).exists():
+            return d / name
+    return None
+
 
 @st.cache_data
 def load():
-    m = json.loads((DATA / "metrics.json").read_text(encoding="utf-8"))
-    mine = pd.read_csv(DATA / "my_gan_synthetic_fraud.csv")
-    noon = pd.read_csv(DATA / "noon_synthetic_fraud.csv")
-    real = pd.read_csv(DATA / "real_fraud_referee.csv")
-    return m, mine, noon, real
+    p = find("metrics.json")
+    m = json.loads(p.read_text(encoding="utf-8")) if p else EMBEDDED_METRICS
+    frames = []
+    for name in ["my_gan_synthetic_fraud.csv", "noon_synthetic_fraud.csv", "real_fraud_referee.csv"]:
+        f = find(name)
+        frames.append(pd.read_csv(f) if f else None)
+    return (m, *frames)
 
 
 M, MY_FRAUD, NOON_FRAUD, REAL_FRAUD = load()
@@ -80,6 +94,47 @@ def fp_bars(df, colors, title):
     ax.bar_label(bars, fmt="%d", fontsize=9, padding=3)
     ax.set_xlim(0, max(fp.max() * 1.18, 5)); ax.set_title(title, fontsize=11); tidy(ax); fig.tight_layout()
     return fig
+
+
+def _phase2():
+    show_real = REAL_FRAUD is not None and st.checkbox("Overlay the real fraud from the referee set (65 rows)", value=False)
+    cont = ["order_amount", "account_age_days", "num_orders_last_7d", "delivery_distance_km", "hour_of_day", "prev_refunds"]
+    fig, axes = plt.subplots(2, 3, figsize=(14, 6.5))
+    for ax, c in zip(axes.ravel(), cont):
+        hi = np.percentile(np.concatenate([MY_FRAUD[c], NOON_FRAUD[c]]), 99)
+        bins = np.linspace(0, hi, 30)
+        ax.hist(MY_FRAUD[c].clip(upper=hi), bins=bins, density=True, alpha=0.55, color=MINE, label="Mine")
+        ax.hist(NOON_FRAUD[c].clip(upper=hi), bins=bins, density=True, alpha=0.55, color=NOON, label="Noon")
+        if show_real:
+            ax.hist(REAL_FRAUD[c].clip(upper=hi), bins=bins, density=True, histtype="step", lw=2,
+                    color="#0b0b0b", label="Real fraud")
+        ax.set_title(c, fontsize=10); tidy(ax)
+    axes[0, 0].legend(frameon=False); fig.tight_layout()
+    st.pyplot(fig)
+
+    c1, c2 = st.columns(2)
+    bin_cols = ["device_change", "location_mismatch", "discount_applied"]
+    rates = pd.DataFrame({"Mine": MY_FRAUD[bin_cols].mean(), "Noon": NOON_FRAUD[bin_cols].mean()})
+    if show_real:
+        rates["Real fraud"] = REAL_FRAUD[bin_cols].mean()
+    fig, ax = plt.subplots(figsize=(6, 3.5)); x = np.arange(len(rates)); n = rates.shape[1]; w = 0.8 / n
+    for i, (col, colr) in enumerate(zip(rates.columns, [MINE, NOON, "#52514e"])):
+        b = ax.bar(x + (i - (n - 1) / 2) * w, rates[col], w - 0.02, color=colr, label=col)
+        ax.bar_label(b, fmt="%.2f", fontsize=8)
+    ax.set_xticks(x, rates.index); ax.set_ylim(0, 1); ax.set_title("Share of fraud rows with flag = 1", fontsize=10)
+    ax.legend(frameon=False, fontsize=8); tidy(ax); fig.tight_layout(); c1.pyplot(fig)
+
+    ld = M["lie_detector"]; imp = pd.Series(ld["importances"]).sort_values()
+    fig, ax = plt.subplots(figsize=(6, 3.5)); ax.barh(imp.index, imp.values, color=MINE)
+    ax.set_title(f"Lie detector: {ld['accuracy']:.2f} accuracy — what gives my fraud away", fontsize=10)
+    tidy(ax); fig.tight_layout(); c2.pyplot(fig)
+
+    st.markdown("**Fraud proportion in each dataset**")
+    prop = pd.DataFrame(M["proportions"], index=["Rows", "Fraud fraction"]).T
+    prop["Rows"] = prop["Rows"].astype(int).map("{:,}".format)
+    prop["Fraud fraction"] = prop["Fraud fraction"].map("{:.2%}".format)
+    st.dataframe(prop, use_container_width=True)
+    st.caption("0.50 lie-detector accuracy would mean my fraud is indistinguishable from Noon's; 0.99 means very different.")
 
 
 # ---------------------------------------------------------------- header
@@ -140,45 +195,11 @@ with tab2:
 # ---------------------------------------------------------------- tab 3
 with tab3:
     st.subheader("Phase 2 — my synthetic fraud vs. Noon's (3,000 rows each)")
-    show_real = st.checkbox("Overlay the real fraud from the referee set (65 rows)", value=False)
-    cont = ["order_amount", "account_age_days", "num_orders_last_7d", "delivery_distance_km", "hour_of_day", "prev_refunds"]
-    fig, axes = plt.subplots(2, 3, figsize=(14, 6.5))
-    for ax, c in zip(axes.ravel(), cont):
-        hi = np.percentile(np.concatenate([MY_FRAUD[c], NOON_FRAUD[c]]), 99)
-        bins = np.linspace(0, hi, 30)
-        ax.hist(MY_FRAUD[c].clip(upper=hi), bins=bins, density=True, alpha=0.55, color=MINE, label="Mine")
-        ax.hist(NOON_FRAUD[c].clip(upper=hi), bins=bins, density=True, alpha=0.55, color=NOON, label="Noon")
-        if show_real:
-            ax.hist(REAL_FRAUD[c].clip(upper=hi), bins=bins, density=True, histtype="step", lw=2,
-                    color="#0b0b0b", label="Real fraud")
-        ax.set_title(c, fontsize=10); tidy(ax)
-    axes[0, 0].legend(frameon=False); fig.tight_layout()
-    st.pyplot(fig)
-
-    c1, c2 = st.columns(2)
-    bin_cols = ["device_change", "location_mismatch", "discount_applied"]
-    rates = pd.DataFrame({"Mine": MY_FRAUD[bin_cols].mean(), "Noon": NOON_FRAUD[bin_cols].mean()})
-    if show_real:
-        rates["Real fraud"] = REAL_FRAUD[bin_cols].mean()
-    fig, ax = plt.subplots(figsize=(6, 3.5)); x = np.arange(len(rates)); n = rates.shape[1]; w = 0.8 / n
-    for i, (col, colr) in enumerate(zip(rates.columns, [MINE, NOON, "#52514e"])):
-        b = ax.bar(x + (i - (n - 1) / 2) * w, rates[col], w - 0.02, color=colr, label=col)
-        ax.bar_label(b, fmt="%.2f", fontsize=8)
-    ax.set_xticks(x, rates.index); ax.set_ylim(0, 1); ax.set_title("Share of fraud rows with flag = 1", fontsize=10)
-    ax.legend(frameon=False, fontsize=8); tidy(ax); fig.tight_layout(); c1.pyplot(fig)
-
-    ld = M["lie_detector"]; imp = pd.Series(ld["importances"]).sort_values()
-    fig, ax = plt.subplots(figsize=(6, 3.5)); ax.barh(imp.index, imp.values, color=MINE)
-    ax.set_title(f"Lie detector: {ld['accuracy']:.2f} accuracy — what gives my fraud away", fontsize=10)
-    tidy(ax); fig.tight_layout(); c2.pyplot(fig)
-
-    st.markdown("**Fraud proportion in each dataset**")
-    prop = pd.DataFrame(M["proportions"], index=["Rows", "Fraud fraction"]).T
-    prop["Rows"] = prop["Rows"].astype(int).map("{:,}".format)
-    prop["Fraud fraction"] = prop["Fraud fraction"].map("{:.2%}".format)
-    st.dataframe(prop, use_container_width=True)
-    st.caption("0.50 lie-detector accuracy would mean my fraud is indistinguishable from Noon's; 0.99 means very different.")
-
+    if MY_FRAUD is None or NOON_FRAUD is None:
+        st.error("Distribution charts need `my_gan_synthetic_fraud.csv` and `noon_synthetic_fraud.csv` "
+                 "in a `data/` folder (or next to dashboard.py). Add them to the repo and reboot the app.")
+    else:
+        _phase2()
 # ---------------------------------------------------------------- tab 4
 with tab4:
     st.subheader("My Phase 1 assumptions vs. the real data (column means)")

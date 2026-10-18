@@ -18,6 +18,9 @@ streamlit run dashboard.py
 - `dashboard.py` — the app (reads only `data/`, no training at runtime)
 - `data/metrics.json` — all precomputed metrics and confusion matrices
 - `data/my_gan_synthetic_fraud.csv`, `data/noon_synthetic_fraud.csv`, `data/real_fraud_referee.csv` — rows for the distribution plots
-- `build_dashboard_data.py` — rebuilds `data/` from the notebook if you rerun the lab
+- `streamlit_app.py` — Streamlit Cloud default entry point (runs dashboard.py)
+- `build_dashboard_data.py` — rebuilds `data/` locally from the notebook; if Streamlit runs it by mistake it just shows the dashboard
+
+**Streamlit Cloud:** set the main file path to `dashboard.py` (or `streamlit_app.py`) and upload the `data/` folder too.
 
 The fraud-check tool is separate: `streamlit run app.py` (needs `fraud_model.joblib`).
